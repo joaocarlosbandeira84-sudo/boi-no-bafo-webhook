@@ -1,0 +1,9 @@
+{
+  "name": "boi-no-bafo-webhook",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "@netlify/functions": "latest"
+  }
+}
