@@ -44,6 +44,13 @@ const ZONAS = [
 
 const FRETE_GRATIS = new Set(["atalaia", "coroa", "farolandia", "aeroporto"]);
 const GUARNICOES_INCLUSAS = "feijão tropeiro, arroz, farofa e vinagrete";
+const PIX_CHAVE = "+5579981258250";
+const PIX_CHAVE_EXIBICAO = "(79) 98125-8250";
+const PIX_BANCO = "Banese";
+const PIX_TITULAR = "João Carlos Ramos Bandeira";
+const PIX_NOME_EMV = "JOAO CARLOS R BANDEIRA";
+const PIX_CIDADE = "ARACAJU";
+const ADMIN_WHATSAPP = process.env.ADMIN_WHATSAPP_NUMBER || "5579981258250";
 
 const sessions = globalThis.__BOI_NO_BAFO_SESSIONS__ || new Map();
 globalThis.__BOI_NO_BAFO_SESSIONS__ = sessions;
@@ -60,6 +67,8 @@ function novaSessao() {
     address: "",
     payment: "",
     changeFor: "",
+    pixPayload: "",
+    pixTxid: "",
     updatedAt: Date.now(),
   };
 }
@@ -83,6 +92,59 @@ function resetSession(numero) {
 
 const dinheiro = (v) =>
   Number(v || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+
+function tlv(id, valor) {
+  const v = String(valor ?? "");
+  return id + String(v.length).padStart(2, "0") + v;
+}
+
+function crc16(payload) {
+  let crc = 0xffff;
+  for (let i = 0; i < payload.length; i++) {
+    crc ^= payload.charCodeAt(i) << 8;
+    for (let j = 0; j < 8; j++) {
+      crc = (crc & 0x8000) ? ((crc << 1) ^ 0x1021) : (crc << 1);
+      crc &= 0xffff;
+    }
+  }
+  return crc.toString(16).toUpperCase().padStart(4, "0");
+}
+
+function gerarPixCopiaCola(valor, txid = "***") {
+  const merchantAccount = tlv("00", "br.gov.bcb.pix") + tlv("01", PIX_CHAVE);
+  const corpo =
+    tlv("00", "01") +
+    tlv("26", merchantAccount) +
+    tlv("52", "0000") +
+    tlv("53", "986") +
+    tlv("54", Number(valor).toFixed(2)) +
+    tlv("58", "BR") +
+    tlv("59", PIX_NOME_EMV) +
+    tlv("60", PIX_CIDADE) +
+    tlv("62", tlv("05", String(txid).replace(/[^A-Za-z0-9]/g, "").slice(0, 25) || "***")) +
+    "6304";
+  return corpo + crc16(corpo);
+}
+
+function normalizarPeso(textoOriginal) {
+  const t = String(textoOriginal || "").trim().toLowerCase().replace(",", ".");
+  if (!t) return null;
+  let g = null;
+  const kg = t.match(/^([0-9]+(?:\.[0-9]+)?)\s*kg$/i);
+  if (kg) g = Number(kg[1]) * 1000;
+  else {
+    const gramas = t.match(/^([0-9]+(?:\.[0-9]+)?)\s*g?(?:ramas?)?$/i);
+    if (gramas) g = Number(gramas[1]);
+  }
+  if (!Number.isFinite(g)) return null;
+  return Math.round(g);
+}
+
+function baseUrl(req) {
+  const host = req.headers.host || "boi-no-bafo-webhook.vercel.app";
+  const protocolo = String(req.headers["x-forwarded-proto"] || "https").split(",")[0];
+  return `${protocolo}://${host}`;
+}
 
 function subtotal(s) {
   return s.cart.reduce((acc, item) => acc + Number(item.valor || 0) * Number(item.qtd || 1), 0);
@@ -158,6 +220,16 @@ async function enviarTexto(phoneNumberId, accessToken, destinatario, texto) {
   });
 }
 
+async function enviarImagem(phoneNumberId, accessToken, destinatario, link, legenda = "") {
+  return enviarWhatsApp(phoneNumberId, accessToken, destinatario, {
+    type: "image",
+    image: {
+      link,
+      ...(legenda ? { caption: legenda } : {}),
+    },
+  });
+}
+
 async function enviarLista(phoneNumberId, accessToken, destinatario, {
   header,
   body,
@@ -203,7 +275,7 @@ async function enviarBotoes(phoneNumberId, accessToken, destinatario, {
 
 async function enviarMenuPrincipal(phoneNumberId, accessToken, destinatario) {
   return enviarLista(phoneNumberId, accessToken, destinatario, {
-    header: "🐂 BOI NO BAFO",
+    header: "BOI NO BAFO",
     body:
       "Olá! 👋 Bem-vindo ao Boi no Bafo.\n\n" +
       "1 kg serve até 5 pessoas.\n" +
@@ -238,48 +310,18 @@ async function enviarMenuCarnes(phoneNumberId, accessToken, destinatario) {
   });
 }
 
-async function enviarFaixaPeso(phoneNumberId, accessToken, destinatario, carne) {
-  const rows = [];
-  for (let g = 200; g <= 600; g += 50) {
-    rows.push({
-      id: `peso_${g}`,
-      title: `${g} g`,
-      description: "Selecionar este peso",
-    });
-  }
-  rows.push({
-    id: "peso_mais",
-    title: "➡️ 650 g até 1 kg",
-    description: "Ver 650, 700, 750, 800, 850, 900, 950 e 1 kg",
-  });
-
-  return enviarLista(phoneNumberId, accessToken, destinatario, {
-    header: "⚖️ Escolha o peso",
-    body:
-      `🥩 *${carne.nome}* — *${dinheiro(carne.precoKg)}/kg*\n\n` +
-      "Escolha o peso. Para pesos maiores, toque em *650 g até 1 kg*.",
-    button: "Ver pesos",
-    rows,
-  });
-}
-
-async function enviarListaPesos(phoneNumberId, accessToken, destinatario, inicio, fim) {
-  const rows = [];
-  for (let g = inicio; g <= fim; g += 50) {
-    rows.push({
-      id: `peso_${g}`,
-      title: g === 1000 ? "1 kg" : `${g} g`,
-      description: "Selecionar este peso",
-    });
-  }
-  rows.push({ id: "peso_voltar", title: "↩️ 200 a 600 g", description: "Voltar aos pesos menores" });
-
-  return enviarLista(phoneNumberId, accessToken, destinatario, {
-    header: "⚖️ 650 g até 1 kg",
-    body: "Escolha: 650, 700, 750, 800, 850, 900, 950 g ou 1 kg.",
-    button: "Ver pesos",
-    rows,
-  });
+async function pedirPesoLivre(phoneNumberId, accessToken, destinatario, carne, s) {
+  s.stage = "weight_free";
+  return enviarTexto(
+    phoneNumberId,
+    accessToken,
+    destinatario,
+    `⚖️ *Quanto você deseja de ${carne.nome}?*\n\n` +
+      `Preço: *${dinheiro(carne.precoKg)}/kg*\n\n` +
+      "Digite o peso desejado. Pedido mínimo: *250 g*.\n" +
+      "Exemplos: *250*, *375*, *620*, *1 kg*, *1,5 kg*.\n\n" +
+      "Digite *VOLTAR* para escolher outra carne."
+  );
 }
 
 async function enviarAposAdicionar(phoneNumberId, accessToken, destinatario, s, item) {
@@ -472,7 +514,7 @@ function gerarLinkImpressao(req, order) {
 }
 
 async function voltar(phoneNumberId, accessToken, destinatario, s) {
-  if (["weight_range", "weight_list"].includes(s.stage)) {
+  if (["weight_free", "weight_range", "weight_list"].includes(s.stage)) {
     s.stage = "meats";
     return enviarMenuCarnes(phoneNumberId, accessToken, destinatario);
   }
@@ -490,6 +532,9 @@ async function voltar(phoneNumberId, accessToken, destinatario, s) {
   }
   if (s.stage === "address") {
     return enviarZonas(phoneNumberId, accessToken, destinatario, s);
+  }
+  if (s.stage === "pix_wait") {
+    return enviarPagamento(phoneNumberId, accessToken, destinatario, s);
   }
   if (s.stage === "payment" || s.stage === "change" || s.stage === "confirm") {
     if (s.fulfillment === "Entrega") {
@@ -546,6 +591,18 @@ export default async function handler(req, res) {
 
     if (["oi", "olá", "ola", "menu", "início", "inicio", "0"].includes(texto)) {
       s.stage = "menu";
+      if (texto !== "menu" && texto !== "0") {
+        try {
+          await enviarImagem(
+            phoneNumberId,
+            accessToken,
+            destinatario,
+            `${baseUrl(req)}/api/logo`
+          );
+        } catch (e) {
+          console.error("Falha ao enviar logomarca:", e);
+        }
+      }
       await enviarMenuPrincipal(phoneNumberId, accessToken, destinatario);
       return res.status(200).send("EVENT_RECEIVED");
     }
@@ -594,51 +651,7 @@ export default async function handler(req, res) {
         await enviarMenuCarnes(phoneNumberId, accessToken, destinatario);
       } else {
         s.selectedMeatId = id;
-        s.stage = "weight_range";
-        await enviarFaixaPeso(phoneNumberId, accessToken, destinatario, carne);
-      }
-    } else if (acao === "peso_mais" || acao === "peso_faixa_2") {
-      s.stage = "weight_list";
-      await enviarListaPesos(phoneNumberId, accessToken, destinatario, 650, 1000);
-    } else if (acao === "peso_faixa_1") {
-      const carne = CARNES.find((c) => c.id === s.selectedMeatId);
-      s.stage = "weight_range";
-      if (carne) await enviarFaixaPeso(phoneNumberId, accessToken, destinatario, carne);
-      else await enviarMenuCarnes(phoneNumberId, accessToken, destinatario);
-    } else if (acao === "peso_voltar") {
-      const carne = CARNES.find((c) => c.id === s.selectedMeatId);
-      s.stage = "weight_range";
-      if (carne) await enviarFaixaPeso(phoneNumberId, accessToken, destinatario, carne);
-      else await enviarMenuCarnes(phoneNumberId, accessToken, destinatario);
-    } else if (acao.startsWith("peso_")) {
-      const g = Number(acao.replace("peso_", ""));
-      const carne = CARNES.find((c) => c.id === s.selectedMeatId);
-      if (!carne || !Number.isFinite(g) || g < 200 || g > 1000 || g % 50 !== 0) {
-        s.stage = "meats";
-        await enviarMenuCarnes(phoneNumberId, accessToken, destinatario);
-      } else {
-        const valor = carne.precoKg * (g / 1000);
-        const key = `${carne.id}-${g}`;
-        const existente = s.cart.find((x) => x.key === key);
-        if (existente) {
-          existente.qtd += 1;
-        } else {
-          s.cart.push({
-            key,
-            tipo: "carne",
-            nome: carne.nome,
-            peso: g,
-            precoKg: carne.precoKg,
-            valor,
-            qtd: 1,
-          });
-        }
-        s.stage = "after_add";
-        await enviarAposAdicionar(phoneNumberId, accessToken, destinatario, s, {
-          nome: carne.nome,
-          peso: g,
-          valor,
-        });
+        await pedirPesoLivre(phoneNumberId, accessToken, destinatario, carne, s);
       }
     } else if (acao === "cart_continue") {
       s.stage = "meats";
@@ -722,8 +735,44 @@ export default async function handler(req, res) {
       } else {
         await enviarZonas(phoneNumberId, accessToken, destinatario, s);
       }
-    } else if (acao === "pay_pix" || acao === "pay_cartao" || acao === "pay_dinheiro") {
-      s.payment = acao === "pay_pix" ? "Pix" : acao === "pay_cartao" ? "Cartão" : "Dinheiro";
+    } else if (acao === "pay_pix") {
+      s.payment = "Pix";
+      s.pixTxid = "BB" + String(Date.now()).slice(-10);
+      s.pixPayload = gerarPixCopiaCola(totalPedido(s), s.pixTxid);
+      s.stage = "pix_wait";
+
+      const qrUrl = `${baseUrl(req)}/api/pix-qr?data=${encodeURIComponent(s.pixPayload)}`;
+      await enviarImagem(
+        phoneNumberId,
+        accessToken,
+        destinatario,
+        qrUrl,
+        `💠 PIX — ${dinheiro(totalPedido(s))}`
+      );
+      await enviarTexto(
+        phoneNumberId,
+        accessToken,
+        destinatario,
+        "💠 *PAGAMENTO VIA PIX*\n\n" +
+          `Banco: *${PIX_BANCO}*\n` +
+          `Titular: *${PIX_TITULAR}*\n` +
+          `Chave Pix: *${PIX_CHAVE_EXIBICAO}*\n` +
+          `Valor: *${dinheiro(totalPedido(s))}*\n\n` +
+          "*PIX COPIA E COLA:*\n" +
+          s.pixPayload
+      );
+      await enviarBotoes(phoneNumberId, accessToken, destinatario, {
+        body: "Depois de realizar o pagamento, toque abaixo:",
+        buttons: [
+          { id: "pix_pago", title: "✅ Já fiz o Pix" },
+          { id: "payment_voltar", title: "↩️ Voltar" },
+        ],
+      });
+    } else if (acao === "pix_pago") {
+      s.payment = "Pix";
+      await enviarConfirmacao(phoneNumberId, accessToken, destinatario, s);
+    } else if (acao === "pay_cartao" || acao === "pay_dinheiro") {
+      s.payment = acao === "pay_cartao" ? "Cartão" : "Dinheiro";
       if (s.payment === "Dinheiro") {
         s.stage = "change";
         await enviarTexto(
@@ -755,8 +804,12 @@ export default async function handler(req, res) {
         deliveryZone: zona?.nome || "",
         payment: s.payment,
         changeFor: s.changeFor || "",
+        customerPhone: destinatario,
+        status: "Novo",
       };
+      const payloadPedido = base64Url(JSON.stringify(order));
       const linkImpressao = gerarLinkImpressao(req, order);
+      const linkPedidos = `${baseUrl(req)}/pedidos.html?o=${payloadPedido}`;
 
       // A impressão é exclusivamente interna: não enviar o link ao cliente.
       // O link fica registrado nos logs da Vercel para a equipe do Boi no Bafo.
@@ -771,6 +824,25 @@ export default async function handler(req, res) {
         })
       );
 
+      // Notificação interna para quem está vendendo.
+      // Não interfere na confirmação enviada ao cliente se a Meta recusar a mensagem interna.
+      try {
+        if (ADMIN_WHATSAPP && ADMIN_WHATSAPP !== destinatario) {
+          await enviarTexto(
+            phoneNumberId,
+            accessToken,
+            ADMIN_WHATSAPP,
+            `📋 *NOVO PEDIDO ${codigo}*\n\n` +
+              `Total: *${dinheiro(total)}*\n` +
+              `Cliente: ${destinatario}\n\n` +
+              "👉 *ABRIR PEDIDOS / IMPRIMIR*\n" +
+              linkPedidos
+          );
+        }
+      } catch (e) {
+        console.error("Falha ao avisar o vendedor:", e);
+      }
+
       await enviarTexto(
         phoneNumberId,
         accessToken,
@@ -781,13 +853,49 @@ export default async function handler(req, res) {
             ? `🛵 Frete: ${s.deliveryFee === 0 ? "GRÁTIS" : dinheiro(s.deliveryFee)}\n`
             : "") +
           `💰 *TOTAL: ${dinheiro(total)}*\n\n` +
-          "Obrigado por pedir no *Boi no Bafo*! 🐂🔥"
+          "Obrigado por pedir no *Boi no Bafo*! 🔥"
       );
       resetSession(destinatario);
     } else if (acao === "cancel_order") {
       resetSession(destinatario);
       await enviarTexto(phoneNumberId, accessToken, destinatario, "❌ Pedido cancelado.");
       await enviarMenuPrincipal(phoneNumberId, accessToken, destinatario);
+    } else if (s.stage === "weight_free" && textoOriginal) {
+      const carne = CARNES.find((c) => c.id === s.selectedMeatId);
+      const g = normalizarPeso(textoOriginal);
+      if (!carne) {
+        s.stage = "meats";
+        await enviarMenuCarnes(phoneNumberId, accessToken, destinatario);
+      } else if (!Number.isFinite(g) || g < 250) {
+        await enviarTexto(
+          phoneNumberId,
+          accessToken,
+          destinatario,
+          "⚖️ O pedido mínimo desta carne é *250 g*.\n\nDigite um peso a partir de 250 g. Ex.: *250*, *430*, *875* ou *1 kg*."
+        );
+      } else {
+        const valor = carne.precoKg * (g / 1000);
+        const key = `${carne.id}-${g}`;
+        const existente = s.cart.find((x) => x.key === key);
+        if (existente) existente.qtd += 1;
+        else {
+          s.cart.push({
+            key,
+            tipo: "carne",
+            nome: carne.nome,
+            peso: g,
+            precoKg: carne.precoKg,
+            valor,
+            qtd: 1,
+          });
+        }
+        s.stage = "after_add";
+        await enviarAposAdicionar(phoneNumberId, accessToken, destinatario, s, {
+          nome: carne.nome,
+          peso: g,
+          valor,
+        });
+      }
     } else if (s.stage === "schedule" && textoOriginal) {
       const normal = texto.toUpperCase();
       if (["AGORA", "O MAIS RÁPIDO POSSÍVEL", "O MAIS RAPIDO POSSIVEL"].includes(normal)) {
