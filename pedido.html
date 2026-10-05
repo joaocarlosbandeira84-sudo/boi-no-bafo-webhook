@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pedido Boi no Bafo</title>
+<style>
+:root{--w:80mm}
+*{box-sizing:border-box}
+body{margin:0;background:#eee;font-family:Arial,Helvetica,sans-serif;color:#000}
+.toolbar{position:sticky;top:0;background:#fff;padding:10px;display:flex;gap:8px;flex-wrap:wrap;border-bottom:1px solid #ccc;z-index:2}
+button{padding:9px 12px;border:1px solid #999;background:#fff;border-radius:8px;font-weight:700}
+.wrap{max-width:900px;margin:16px auto;padding:0 12px}
+.sheet{width:var(--w);max-width:100%;margin:0 auto 14px;background:#fff;padding:5mm;box-shadow:0 1px 8px #bbb}
+h1{font-size:18px;text-align:center;margin:3px 0}
+.center{text-align:center;font-size:12px}
+.copy{text-align:center;font-weight:800;font-size:13px;margin-bottom:6px}
+.dash{border-top:1px dashed #000;margin:7px 0}
+.row{display:flex;justify-content:space-between;gap:8px;font-size:12px}
+.item{margin:7px 0;font-size:12px}
+.sub{font-size:11px}
+.total{font-size:16px;font-weight:800;margin-top:4px}
+.cut{text-align:center;margin:10px auto;font-size:12px}
+.err{background:#fff;padding:20px;margin:30px auto;max-width:650px}
+@media print{
+  body{background:#fff}
+  .toolbar{display:none}
+  .wrap{margin:0;padding:0}
+  .sheet{box-shadow:none;page-break-after:always;margin:0 auto}
+  .cut{display:none}
+}
+</style>
+</head>
+<body>
+<div class="toolbar">
+  <button onclick="setW('80mm')">80 mm</button>
+  <button onclick="setW('58mm')">58 mm</button>
+  <button onclick="window.print()">🖨️ Imprimir 2 vias</button>
+</div>
+<div class="wrap" id="app"></div>
+<script>
+function money(v){return Number(v||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}
+function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function decodePayload(v){
+  const pad='='.repeat((4-v.length%4)%4);
+  const b64=(v+pad).replace(/-/g,'+').replace(/_/g,'/');
+  const bytes=Uint8Array.from(atob(b64),c=>c.charCodeAt(0));
+  return JSON.parse(new TextDecoder().decode(bytes));
+}
+function weightLabel(g){return Number(g)===1000?'1 kg':g+' g'}
+function setW(w){document.documentElement.style.setProperty('--w',w)}
+function receipt(o,title){
+  const when=new Date(o.createdAt).toLocaleString('pt-BR');
+  const schedule=o.requestedTime==='ASAP'?'O mais rápido possível':(o.requestedTime||'');
+  const items=(o.items||[]).map(x=>{
+    const detalhe=x.tipo==='carne'
+      ? weightLabel(x.peso)+' • '+money(x.precoKg)+'/kg'
+      : esc(x.tamanho||'');
+    return '<div class="item"><div class="row"><b>'+esc(x.qtd)+'x '+esc(x.nome)+'</b><b>'+money(Number(x.valor||0)*Number(x.qtd||1))+'</b></div><div class="sub">'+detalhe+'</div></div>';
+  }).join('');
+  const destino=o.fulfillment==='Entrega'
+    ? '<div class="dash"></div><b>REGIÃO / ENTREGA</b><div>'+esc(o.deliveryZone||'')+'</div><b>ENDEREÇO</b><div>'+esc(o.address||'')+'</div>'
+    : '';
+  const troco=o.payment==='Dinheiro'&&o.changeFor
+    ? '<div><b>'+(o.changeFor==='SEM TROCO'?'SEM TROCO':'TROCO PARA '+money(Number(o.changeFor)))+'</b></div>'
+    : '';
+  const maquina=o.payment==='Cartão'&&o.fulfillment==='Entrega'
+    ? '<div><b>LEVAR MAQUININHA</b></div>'
+    : '';
+  return '<div class="sheet"><div class="copy">'+esc(title)+'</div><h1>Boi no Bafo</h1><div class="center">PEDIDO '+esc(o.code)+'<br>'+esc(when)+'</div><div class="dash"></div><div><b>TIPO:</b> '+esc((o.fulfillment||'').toUpperCase())+'</div><div><b>HORÁRIO:</b> '+esc(schedule)+'</div><div class="dash"></div><b>ITENS</b>'+items+'<div class="dash"></div><div class="row"><span>Subtotal</span><span>'+money(o.subtotal)+'</span></div><div class="row"><span>Taxa entrega</span><span>'+(Number(o.deliveryFee||0)===0?'GRÁTIS':money(o.deliveryFee))+'</span></div><div class="row total"><span>TOTAL</span><span>'+money(o.total)+'</span></div>'+destino+'<div class="dash"></div><b>PAGAMENTO</b><div>'+esc(o.payment||'')+'</div>'+troco+maquina+'<div class="dash"></div><div class="center">pedido gerado pelo atendimento automático</div></div>';
+}
+try{
+  const q=new URLSearchParams(location.search).get('o');
+  if(!q) throw new Error('Pedido não informado');
+  const o=decodePayload(q);
+  document.getElementById('app').innerHTML=receipt(o,'VIA 1 — PREPARO / COZINHA')+'<div class="cut">✂────────── CORTE AQUI ──────────✂</div>'+receipt(o,'VIA 2 — CAIXA / ATENDIMENTO');
+}catch(e){
+  document.getElementById('app').innerHTML='<div class="err"><h2>Não foi possível abrir o pedido.</h2><p>'+esc(e.message)+'</p></div>';
+}
+</script>
+</body>
+</html>
