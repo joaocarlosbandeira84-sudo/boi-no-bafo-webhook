@@ -758,6 +758,19 @@ export default async function handler(req, res) {
       };
       const linkImpressao = gerarLinkImpressao(req, order);
 
+      // A impressão é exclusivamente interna: não enviar o link ao cliente.
+      // O link fica registrado nos logs da Vercel para a equipe do Boi no Bafo.
+      console.log(
+        "PEDIDO_INTERNO_IMPRESSAO",
+        JSON.stringify({
+          codigo,
+          linkImpressao,
+          via1: "PREPARO / COZINHA",
+          via2: "CAIXA / ATENDIMENTO",
+          largura: ["80mm", "58mm"],
+        })
+      );
+
       await enviarTexto(
         phoneNumberId,
         accessToken,
@@ -768,9 +781,6 @@ export default async function handler(req, res) {
             ? `🛵 Frete: ${s.deliveryFee === 0 ? "GRÁTIS" : dinheiro(s.deliveryFee)}\n`
             : "") +
           `💰 *TOTAL: ${dinheiro(total)}*\n\n` +
-          "🖨️ *IMPRIMIR 2 VIAS DO PEDIDO*\n" +
-          linkImpressao +
-          "\n\nA página abre as vias *PREPARO/COZINHA* e *CAIXA/ATENDIMENTO* para impressão.\n\n" +
           "Obrigado por pedir no *Boi no Bafo*! 🐂🔥"
       );
       resetSession(destinatario);
