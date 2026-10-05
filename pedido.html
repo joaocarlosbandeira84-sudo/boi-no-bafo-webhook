@@ -67,7 +67,10 @@ function receipt(o,title){
   const maquina=o.payment==='Cartão'&&o.fulfillment==='Entrega'
     ? '<div><b>LEVAR MAQUININHA</b></div>'
     : '';
-  return '<div class="sheet"><div class="copy">'+esc(title)+'</div><h1>Boi no Bafo</h1><div class="center">PEDIDO '+esc(o.code)+'<br>'+esc(when)+'</div><div class="dash"></div><div><b>TIPO:</b> '+esc((o.fulfillment||'').toUpperCase())+'</div><div><b>HORÁRIO:</b> '+esc(schedule)+'</div><div class="dash"></div><b>ITENS</b>'+items+'<div class="dash"></div><div class="row"><span>Subtotal</span><span>'+money(o.subtotal)+'</span></div><div class="row"><span>Taxa entrega</span><span>'+(Number(o.deliveryFee||0)===0?'GRÁTIS':money(o.deliveryFee))+'</span></div><div class="row total"><span>TOTAL</span><span>'+money(o.total)+'</span></div>'+destino+'<div class="dash"></div><b>PAGAMENTO</b><div>'+esc(o.payment||'')+'</div>'+troco+maquina+'<div class="dash"></div><div class="center">pedido gerado pelo atendimento automático</div></div>';
+  const pixOk=o.payment==='Pix'&&o.proofReceived
+    ? '<div><b>PIX — COMPROVANTE RECEBIDO</b></div>'
+    : '';
+  return '<div class="sheet"><div class="copy">'+esc(title)+'</div><h1>Boi no Bafo</h1><div class="center">PEDIDO '+esc(o.code)+'<br>'+esc(when)+'</div><div class="dash"></div><div><b>TIPO:</b> '+esc((o.fulfillment||'').toUpperCase())+'</div><div><b>HORÁRIO:</b> '+esc(schedule)+'</div><div class="dash"></div><b>ITENS</b>'+items+'<div class="dash"></div><div class="row"><span>Subtotal</span><span>'+money(o.subtotal)+'</span></div><div class="row"><span>Taxa entrega</span><span>'+(Number(o.deliveryFee||0)===0?'GRÁTIS':money(o.deliveryFee))+'</span></div><div class="row total"><span>TOTAL</span><span>'+money(o.total)+'</span></div>'+destino+'<div class="dash"></div><b>PAGAMENTO</b><div>'+esc(o.payment||'')+'</div>'+pixOk+troco+maquina+'<div class="dash"></div><div class="center">pedido gerado pelo atendimento automático</div></div>';
 }
 try{
   const q=new URLSearchParams(location.search).get('o');
