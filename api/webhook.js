@@ -44,12 +44,9 @@ const ZONAS = [
 
 const FRETE_GRATIS = new Set(["atalaia", "coroa", "farolandia", "aeroporto"]);
 const GUARNICOES_INCLUSAS = "feijão tropeiro, arroz, farofa e vinagrete";
-const PIX_CHAVE = "+5579981258250";
 const PIX_CHAVE_EXIBICAO = "(79) 98125-8250";
 const PIX_BANCO = "Banese";
 const PIX_TITULAR = "João Carlos Ramos Bandeira";
-const PIX_NOME_EMV = "JOAO CARLOS R BANDEIRA";
-const PIX_CIDADE = "ARACAJU";
 const ADMIN_WHATSAPP = process.env.ADMIN_WHATSAPP_NUMBER || "5579981258250";
 
 const sessions = globalThis.__BOI_NO_BAFO_SESSIONS__ || new Map();
@@ -67,8 +64,7 @@ function novaSessao() {
     address: "",
     payment: "",
     changeFor: "",
-    pixPayload: "",
-    pixTxid: "",
+    pixOrderCode: "",
     updatedAt: Date.now(),
   };
 }
@@ -92,39 +88,6 @@ function resetSession(numero) {
 
 const dinheiro = (v) =>
   Number(v || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-
-function tlv(id, valor) {
-  const v = String(valor ?? "");
-  return id + String(v.length).padStart(2, "0") + v;
-}
-
-function crc16(payload) {
-  let crc = 0xffff;
-  for (let i = 0; i < payload.length; i++) {
-    crc ^= payload.charCodeAt(i) << 8;
-    for (let j = 0; j < 8; j++) {
-      crc = (crc & 0x8000) ? ((crc << 1) ^ 0x1021) : (crc << 1);
-      crc &= 0xffff;
-    }
-  }
-  return crc.toString(16).toUpperCase().padStart(4, "0");
-}
-
-function gerarPixCopiaCola(valor, txid = "***") {
-  const merchantAccount = tlv("00", "br.gov.bcb.pix") + tlv("01", PIX_CHAVE);
-  const corpo =
-    tlv("00", "01") +
-    tlv("26", merchantAccount) +
-    tlv("52", "0000") +
-    tlv("53", "986") +
-    tlv("54", Number(valor).toFixed(2)) +
-    tlv("58", "BR") +
-    tlv("59", PIX_NOME_EMV) +
-    tlv("60", PIX_CIDADE) +
-    tlv("62", tlv("05", String(txid).replace(/[^A-Za-z0-9]/g, "").slice(0, 25) || "***")) +
-    "6304";
-  return corpo + crc16(corpo);
-}
 
 function normalizarPeso(textoOriginal) {
   const t = String(textoOriginal || "").trim().toLowerCase().replace(",", ".");
@@ -228,6 +191,29 @@ async function enviarImagem(phoneNumberId, accessToken, destinatario, link, lege
       ...(legenda ? { caption: legenda } : {}),
     },
   });
+}
+
+async function encaminharComprovante(phoneNumberId, accessToken, destinatario, message, codigo) {
+  if (message?.type === "image" && message.image?.id) {
+    return enviarWhatsApp(phoneNumberId, accessToken, destinatario, {
+      type: "image",
+      image: {
+        id: message.image.id,
+        caption: `📎 Comprovante recebido — Pedido ${codigo}`,
+      },
+    });
+  }
+
+  if (message?.type === "document" && message.document?.id) {
+    return enviarWhatsApp(phoneNumberId, accessToken, destinatario, {
+      type: "document",
+      document: {
+        id: message.document.id,
+        filename: message.document.filename || `comprovante-${codigo}.pdf`,
+        caption: `📎 Comprovante recebido — Pedido ${codigo}`,
+      },
+    });
+  }
 }
 
 async function enviarLista(phoneNumberId, accessToken, destinatario, {
@@ -614,6 +600,101 @@ export default async function handler(req, res) {
 
     const acao = interacao || "";
 
+    if (s.stage === "pix_wait" && (message?.type === "image" || message?.type === "document")) {
+      const ehImagem = message?.type === "image" && message.image?.id;
+      const ehPdf =
+        message?.type === "document" &&
+        message.document?.id &&
+        message.document?.mime_type === "application/pdf";
+
+      if (!ehImagem && !ehPdf) {
+        await enviarTexto(
+          phoneNumberId,
+          accessToken,
+          destinatario,
+          "📎 Envie o comprovante como *foto/imagem* ou *arquivo PDF*."
+        );
+        return res.status(200).send("EVENT_RECEIVED");
+      }
+
+      const codigo =
+        s.pixOrderCode ||
+        ("BB" + String(Math.floor(1000 + Math.random() * 9000)));
+
+      s.deliveryFee = calcularFrete(s, s.deliveryZoneId);
+      const total = totalPedido(s);
+      const zona = ZONAS.find((z) => z.id === s.deliveryZoneId);
+      const order = {
+        code: codigo,
+        createdAt: new Date().toISOString(),
+        items: s.cart.map((x) => ({ ...x })),
+        subtotal: subtotal(s),
+        deliveryFee: s.deliveryFee,
+        total,
+        fulfillment: s.fulfillment,
+        requestedTime: s.requestedTime,
+        address: s.address,
+        deliveryZone: zona?.nome || "",
+        payment: "Pix",
+        changeFor: "",
+        customerPhone: destinatario,
+        status: "Comprovante recebido",
+        proofReceived: true,
+      };
+
+      const payloadPedido = base64Url(JSON.stringify(order));
+      const linkImpressao = gerarLinkImpressao(req, order);
+      const linkPedidos = `${baseUrl(req)}/pedidos.html?o=${payloadPedido}`;
+
+      await enviarTexto(
+        phoneNumberId,
+        accessToken,
+        destinatario,
+        `✅ *Comprovante recebido.*\n\nPedido *${codigo}*. Seu pedido foi encaminhado para confirmação.`
+      );
+
+      try {
+        if (ADMIN_WHATSAPP && ADMIN_WHATSAPP !== destinatario) {
+          await encaminharComprovante(
+            phoneNumberId,
+            accessToken,
+            ADMIN_WHATSAPP,
+            message,
+            codigo
+          );
+
+          await enviarTexto(
+            phoneNumberId,
+            accessToken,
+            ADMIN_WHATSAPP,
+            `📋 *NOVO PEDIDO ${codigo}*\n\n` +
+              "💠 *PIX — COMPROVANTE RECEBIDO*\n" +
+              `💰 Total: *${dinheiro(total)}*\n` +
+              `Cliente: ${destinatario}\n\n` +
+              "🖨️ *IMPRIMIR 2 VIAS*\n" +
+              linkImpressao +
+              "\n\n📋 *ABRIR CENTRAL DE PEDIDOS*\n" +
+              linkPedidos
+          );
+        }
+      } catch (e) {
+        console.error("Falha ao encaminhar comprovante/pedido ao vendedor:", e);
+      }
+
+      resetSession(destinatario);
+      return res.status(200).send("EVENT_RECEIVED");
+    }
+
+    if (s.stage === "pix_wait" && textoOriginal && texto !== "voltar") {
+      await enviarTexto(
+        phoneNumberId,
+        accessToken,
+        destinatario,
+        "📎 Para concluir o Pix, envie aqui o *comprovante como foto ou PDF*."
+      );
+      return res.status(200).send("EVENT_RECEIVED");
+    }
+
     if (acao === "menu_pedido") {
       s = resetSession(destinatario);
       s.stage = "meats";
@@ -737,18 +818,9 @@ export default async function handler(req, res) {
       }
     } else if (acao === "pay_pix") {
       s.payment = "Pix";
-      s.pixTxid = "BB" + String(Date.now()).slice(-10);
-      s.pixPayload = gerarPixCopiaCola(totalPedido(s), s.pixTxid);
+      s.pixOrderCode = s.pixOrderCode || ("BB" + String(Math.floor(1000 + Math.random() * 9000)));
       s.stage = "pix_wait";
 
-      const qrUrl = `${baseUrl(req)}/api/pix-qr?data=${encodeURIComponent(s.pixPayload)}`;
-      await enviarImagem(
-        phoneNumberId,
-        accessToken,
-        destinatario,
-        qrUrl,
-        `💠 PIX — ${dinheiro(totalPedido(s))}`
-      );
       await enviarTexto(
         phoneNumberId,
         accessToken,
@@ -758,19 +830,9 @@ export default async function handler(req, res) {
           `Titular: *${PIX_TITULAR}*\n` +
           `Chave Pix: *${PIX_CHAVE_EXIBICAO}*\n` +
           `Valor: *${dinheiro(totalPedido(s))}*\n\n` +
-          "*PIX COPIA E COLA:*\n" +
-          s.pixPayload
+          "Após realizar o pagamento, envie o *comprovante aqui pelo WhatsApp* como foto ou PDF.\n\n" +
+          "Digite *VOLTAR* para escolher outra forma de pagamento."
       );
-      await enviarBotoes(phoneNumberId, accessToken, destinatario, {
-        body: "Depois de realizar o pagamento, toque abaixo:",
-        buttons: [
-          { id: "pix_pago", title: "✅ Já fiz o Pix" },
-          { id: "payment_voltar", title: "↩️ Voltar" },
-        ],
-      });
-    } else if (acao === "pix_pago") {
-      s.payment = "Pix";
-      await enviarConfirmacao(phoneNumberId, accessToken, destinatario, s);
     } else if (acao === "pay_cartao" || acao === "pay_dinheiro") {
       s.payment = acao === "pay_cartao" ? "Cartão" : "Dinheiro";
       if (s.payment === "Dinheiro") {
