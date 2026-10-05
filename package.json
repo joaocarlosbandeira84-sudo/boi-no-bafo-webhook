@@ -5,5 +5,8 @@
   "type": "module",
   "devDependencies": {
     "@netlify/functions": "latest"
+  },
+  "dependencies": {
+    "qrcode": "^1.5.4"
   }
 }
