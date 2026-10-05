@@ -94,8 +94,17 @@ function totalCarneGramas(s) {
     .reduce((acc, x) => acc + Number(x.peso || 0) * Number(x.qtd || 1), 0);
 }
 
+function calcularFrete(s, zonaId = s.deliveryZoneId) {
+  if (s.fulfillment !== "Entrega") return 0;
+  const zona = ZONAS.find((z) => z.id === zonaId);
+  if (!zona) return 0;
+  // Regra do Boi no Bafo: nas áreas promocionais, a partir de 500 g de carne o frete é grátis.
+  if (FRETE_GRATIS.has(zona.id) && totalCarneGramas(s) >= 500) return 0;
+  return Number(zona.taxa || 0);
+}
+
 function totalPedido(s) {
-  return subtotal(s) + Number(s.deliveryFee || 0);
+  return subtotal(s) + calcularFrete(s);
 }
 
 function resumoCarrinho(s) {
@@ -230,16 +239,27 @@ async function enviarMenuCarnes(phoneNumberId, accessToken, destinatario) {
 }
 
 async function enviarFaixaPeso(phoneNumberId, accessToken, destinatario, carne) {
-  return enviarBotoes(phoneNumberId, accessToken, destinatario, {
+  const rows = [];
+  for (let g = 200; g <= 600; g += 50) {
+    rows.push({
+      id: `peso_${g}`,
+      title: `${g} g`,
+      description: "Selecionar este peso",
+    });
+  }
+  rows.push({
+    id: "peso_mais",
+    title: "➡️ 650 g até 1 kg",
+    description: "Ver 650, 700, 750, 800, 850, 900, 950 e 1 kg",
+  });
+
+  return enviarLista(phoneNumberId, accessToken, destinatario, {
+    header: "⚖️ Escolha o peso",
     body:
-      `🥩 *${carne.nome}*\n` +
-      `Preço: *${dinheiro(carne.precoKg)}/kg*\n\n` +
-      "Escolha a faixa de peso:",
-    buttons: [
-      { id: "peso_faixa_1", title: "200 a 600 g" },
-      { id: "peso_faixa_2", title: "650 g a 1 kg" },
-      { id: "peso_voltar", title: "↩️ Voltar" },
-    ],
+      `🥩 *${carne.nome}* — *${dinheiro(carne.precoKg)}/kg*\n\n` +
+      "Escolha o peso. Para pesos maiores, toque em *650 g até 1 kg*.",
+    button: "Ver pesos",
+    rows,
   });
 }
 
@@ -252,11 +272,11 @@ async function enviarListaPesos(phoneNumberId, accessToken, destinatario, inicio
       description: "Selecionar este peso",
     });
   }
-  rows.push({ id: "peso_voltar", title: "↩️ Voltar", description: "Voltar às carnes" });
+  rows.push({ id: "peso_voltar", title: "↩️ 200 a 600 g", description: "Voltar aos pesos menores" });
 
   return enviarLista(phoneNumberId, accessToken, destinatario, {
-    header: "⚖️ Escolha o peso",
-    body: "Selecione o peso desejado:",
+    header: "⚖️ 650 g até 1 kg",
+    body: "Escolha: 650, 700, 750, 800, 850, 900, 950 g ou 1 kg.",
     button: "Ver pesos",
     rows,
   });
@@ -353,7 +373,7 @@ async function enviarZonas(phoneNumberId, accessToken, destinatario, s) {
   s.stage = "delivery_zone";
   const gramas = totalCarneGramas(s);
   const rows = ZONAS.map((z) => {
-    const gratis = FRETE_GRATIS.has(z.id) && gramas > 500;
+    const gratis = FRETE_GRATIS.has(z.id) && gramas >= 500;
     return {
       id: `zona_${z.id}`,
       title: z.nome.slice(0, 24),
@@ -390,6 +410,7 @@ async function enviarPagamento(phoneNumberId, accessToken, destinatario, s) {
 async function enviarConfirmacao(phoneNumberId, accessToken, destinatario, s) {
   s.stage = "confirm";
   const zona = ZONAS.find((z) => z.id === s.deliveryZoneId);
+  s.deliveryFee = calcularFrete(s, s.deliveryZoneId);
   let detalhes =
     "✅ *Confira seu pedido*\n\n" +
     resumoCarrinho(s) +
@@ -433,6 +454,21 @@ function obterInteracao(message) {
 
 function obterTexto(message) {
   return (message?.text?.body || "").trim();
+}
+
+function base64Url(texto) {
+  return Buffer.from(texto, "utf8")
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "");
+}
+
+function gerarLinkImpressao(req, order) {
+  const host = req.headers.host || "boi-no-bafo-webhook.vercel.app";
+  const protocolo = String(req.headers["x-forwarded-proto"] || "https").split(",")[0];
+  const payload = base64Url(JSON.stringify(order));
+  return `${protocolo}://${host}/pedido.html?o=${payload}`;
 }
 
 async function voltar(phoneNumberId, accessToken, destinatario, s) {
@@ -561,15 +597,19 @@ export default async function handler(req, res) {
         s.stage = "weight_range";
         await enviarFaixaPeso(phoneNumberId, accessToken, destinatario, carne);
       }
-    } else if (acao === "peso_faixa_1") {
-      s.stage = "weight_list";
-      await enviarListaPesos(phoneNumberId, accessToken, destinatario, 200, 600);
-    } else if (acao === "peso_faixa_2") {
+    } else if (acao === "peso_mais" || acao === "peso_faixa_2") {
       s.stage = "weight_list";
       await enviarListaPesos(phoneNumberId, accessToken, destinatario, 650, 1000);
+    } else if (acao === "peso_faixa_1") {
+      const carne = CARNES.find((c) => c.id === s.selectedMeatId);
+      s.stage = "weight_range";
+      if (carne) await enviarFaixaPeso(phoneNumberId, accessToken, destinatario, carne);
+      else await enviarMenuCarnes(phoneNumberId, accessToken, destinatario);
     } else if (acao === "peso_voltar") {
-      s.stage = "meats";
-      await enviarMenuCarnes(phoneNumberId, accessToken, destinatario);
+      const carne = CARNES.find((c) => c.id === s.selectedMeatId);
+      s.stage = "weight_range";
+      if (carne) await enviarFaixaPeso(phoneNumberId, accessToken, destinatario, carne);
+      else await enviarMenuCarnes(phoneNumberId, accessToken, destinatario);
     } else if (acao.startsWith("peso_")) {
       const g = Number(acao.replace("peso_", ""));
       const carne = CARNES.find((c) => c.id === s.selectedMeatId);
@@ -671,7 +711,7 @@ export default async function handler(req, res) {
       const zona = ZONAS.find((z) => z.id === zonaId);
       if (zona) {
         s.deliveryZoneId = zona.id;
-        s.deliveryFee = FRETE_GRATIS.has(zona.id) && totalCarneGramas(s) > 500 ? 0 : zona.taxa;
+        s.deliveryFee = calcularFrete(s, zona.id);
         s.stage = "address";
         await enviarTexto(
           phoneNumberId,
@@ -699,7 +739,25 @@ export default async function handler(req, res) {
       await voltar(phoneNumberId, accessToken, destinatario, s);
     } else if (acao === "confirm_order") {
       const codigo = "BB" + String(Math.floor(1000 + Math.random() * 9000));
+      s.deliveryFee = calcularFrete(s, s.deliveryZoneId);
       const total = totalPedido(s);
+      const zona = ZONAS.find((z) => z.id === s.deliveryZoneId);
+      const order = {
+        code: codigo,
+        createdAt: new Date().toISOString(),
+        items: s.cart.map((x) => ({ ...x })),
+        subtotal: subtotal(s),
+        deliveryFee: s.deliveryFee,
+        total,
+        fulfillment: s.fulfillment,
+        requestedTime: s.requestedTime,
+        address: s.address,
+        deliveryZone: zona?.nome || "",
+        payment: s.payment,
+        changeFor: s.changeFor || "",
+      };
+      const linkImpressao = gerarLinkImpressao(req, order);
+
       await enviarTexto(
         phoneNumberId,
         accessToken,
@@ -710,6 +768,9 @@ export default async function handler(req, res) {
             ? `🛵 Frete: ${s.deliveryFee === 0 ? "GRÁTIS" : dinheiro(s.deliveryFee)}\n`
             : "") +
           `💰 *TOTAL: ${dinheiro(total)}*\n\n` +
+          "🖨️ *IMPRIMIR 2 VIAS DO PEDIDO*\n" +
+          linkImpressao +
+          "\n\nA página abre as vias *PREPARO/COZINHA* e *CAIXA/ATENDIMENTO* para impressão.\n\n" +
           "Obrigado por pedir no *Boi no Bafo*! 🐂🔥"
       );
       resetSession(destinatario);
