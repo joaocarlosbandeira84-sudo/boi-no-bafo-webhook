@@ -21,7 +21,7 @@ main{max-width:900px;margin:auto;padding:14px}.notice{background:#fff7d9;border:
 <header><h1>📋 Pedidos — Boi no Bafo</h1><small>Área interna de atendimento e impressão</small></header>
 <main>
 <div class="notice">Esta área é para uso interno. Cada link recebido pelo vendedor adiciona o pedido a esta lista neste aparelho.</div>
-<div id="list"></div>
+<button id="demo" class="primary" style="border:0;border-radius:9px;padding:13px;font-weight:700">Criar pedido de teste</button><div id="list"></div>
 </main>
 <script>
 const KEY='boi-no-bafo-pedidos-v1';
@@ -32,6 +32,12 @@ function load(){try{return JSON.parse(localStorage.getItem(KEY)||'[]')}catch{ret
 function save(x){localStorage.setItem(KEY,JSON.stringify(x))}
 function encoded(o){const bytes=new TextEncoder().encode(JSON.stringify(o));let bin='';bytes.forEach(b=>bin+=String.fromCharCode(b));return btoa(bin).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'')}
 let orders=load();
+function demo(){
+ const code='TESTE-'+Date.now().toString().slice(-6);
+ const o={code,createdAt:new Date().toISOString(),customerPhone:'(79) 99999-0000',customerName:'Cliente de teste',fulfillment:'Entrega',deliveryZone:'Atalaia',address:'Rua Exemplo, 100 - TESTE (não entregar)',requestedTime:'12:40',payment:'Cartão na maquininha',changeFor:'',subtotal:157,deliveryFee:0,total:157,status:'Novo',items:[{tipo:'carne',nome:'Costela de boi',peso:1000,precoKg:157,valor:157,qtd:1}],notes:'PEDIDO FICTÍCIO PARA TESTAR IMPRESSÃO'};
+ orders.unshift(o);save(orders);render();document.getElementById('list').scrollIntoView({behavior:'smooth'});
+}
+
 const q=new URLSearchParams(location.search).get('o');
 if(q){try{const o=decode(q);const i=orders.findIndex(x=>x.code===o.code);if(i>=0)orders[i]={...orders[i],...o,status:orders[i].status||o.status||'Novo'};else orders.unshift({...o,status:o.status||'Novo'});save(orders);history.replaceState(null,'',location.pathname)}catch(e){}}
 function setStatus(code,status){const o=orders.find(x=>x.code===code);if(!o)return;o.status=status;save(orders);render()}
@@ -57,6 +63,7 @@ function render(){
    '<button class="danger" onclick="removeOrder(\''+esc(o.code)+'\')">Remover</button></div></section>'
  }).join('')
 }
+document.getElementById('demo').onclick=demo;
 render();
 </script>
 </body>
