@@ -49,7 +49,7 @@ function render(){
    '<div><b>'+esc(o.fulfillment||'')+'</b> • '+esc(o.requestedTime==='ASAP'?'O mais rápido possível':o.requestedTime||'')+'</div>'+
    (o.fulfillment==='Entrega'?'<div>📍 '+esc(o.deliveryZone||'')+' — '+esc(o.address||'')+'</div>':'')+
    '<div>💳 '+esc(o.payment||'')+(o.payment==='Dinheiro'&&o.changeFor?' • '+esc(o.changeFor==='SEM TROCO'?'Sem troco':'Troco para '+money(o.changeFor)):'')+'</div>'+
-   '<div class="actions"><a class="btn print" href="'+printUrl+'">🖨️ Imprimir 2 vias</a>'+
+   '<div class="actions">'+(o.status==='Confirmado'?'<a class="btn print" href="'+printUrl+'">🖨️ Imprimir 2 vias</a>':'<button class="primary" onclick="setStatus(\''+esc(o.code)+'\',\'Confirmado\')">✔ Confirmar pedido</button>')+
    '<button onclick="setStatus(\''+esc(o.code)+'\',\'Em preparo\')">✅ Em preparo</button>'+
    '<button onclick="setStatus(\''+esc(o.code)+'\',\'Pronto\')">🔥 Pronto</button>'+
    '<button onclick="setStatus(\''+esc(o.code)+'\',\'Saiu para entrega\')">🛵 Saiu</button>'+
