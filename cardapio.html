@@ -32,7 +32,7 @@ try {
  const response=await fetch('https://essmanuxbwfusncvugak.supabase.co/rest/v1/pedidos_boi_no_bafo',{method:'POST',headers:{'Content-Type':'application/json','apikey':'sb_publishable_rGXVYTeArtbbhDa9P6KQbw_mLLkMkAm','Prefer':'return=minimal'},body:JSON.stringify(order)});
  if(!response.ok){let details='';try{const data=await response.json();details=data.message||data.hint||data.code||'';}catch(_){}throw new Error('Falha ao registrar ('+response.status+'). '+details);}
  alert('Pedido '+code+' registrado na central! Envie também o resumo pelo WhatsApp.');
- window.location.href='https://wa.me/'+PHONE+'?text='+encodeURIComponent('Pedido '+code+'\\n'+message);
+ window.location.href='https://wa.me/'+PHONE+'?text='+encodeURIComponent('Pedido '+code+'\n'+message+'\n\n🔐 *CONFIRMAR PEDIDO (ACESSO DA LOJA):*\nhttps://boi-no-bafo-webhook.vercel.app/central.html?pedido='+encodeURIComponent(code)+'\n\nEnvie esta mensagem para avisar a loja.');
 } catch(err) {
  alert('Não foi possível salvar o pedido na central. Nenhum pedido foi confirmado. '+err.message);
 } finally {finish.disabled=false;finish.textContent='Registrar pedido e abrir WhatsApp';}};
