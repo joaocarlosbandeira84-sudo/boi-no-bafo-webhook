@@ -54,7 +54,7 @@ let currentOrder=null;
 async function shareBluetooth(){
  if(!currentOrder)return alert('Pedido não carregado.');
  const o=currentOrder;
- const lines=(o.items||[]).map(x=>String(x.qtd||1)+'x '+String(x.nome||'')+' '+(x.peso?x.peso+'g ':'')+' - '+money(Number(x.valor||0)*Number(x.qtd||1)));
+ const lines=(o.items||[]).map(x=>(typeof x==='string'?x:(x.descricao||[x.qtd||1,'x',x.nome||'',x.peso?x.peso+'g':'',x.valor!=null?money(Number(x.valor)*Number(x.qtd||1)):''].filter(Boolean).join(' '))));
  const base=['BOI NO BAFO','PEDIDO '+(o.code||''),'Cliente: '+(o.customerName||''),'Telefone: '+(o.customerPhone||''),'Tipo: '+(o.fulfillment||''),'Horario: '+(o.requestedTime||''),o.fulfillment==='Entrega'?'Endereco: '+(o.address||''):null,'------------------------------',...lines,'------------------------------','Subtotal: '+money(o.subtotal),'Frete: '+money(o.deliveryFee),'TOTAL: '+money(o.total),'Pagamento: '+(o.payment||''),'Observacoes: '+(o.notes||'')].filter(x=>x!==null).join('\n');
  const content='VIA 1 - COZINHA\n'+base+'\n\n\n------------------------------\nVIA 2 - CAIXA\n'+base+'\n\n';
  const file=new File([content],'pedido-'+String(o.code||'boi-no-bafo').replace(/[^a-zA-Z0-9-]/g,'')+'.txt',{type:'text/plain'});
@@ -68,10 +68,9 @@ function receipt(o,title){
   const when=new Date(o.createdAt).toLocaleString('pt-BR');
   const schedule=o.requestedTime==='ASAP'?'O mais rápido possível':(o.requestedTime||'');
   const items=(o.items||[]).map(x=>{
-    const detalhe=x.tipo==='carne'
-      ? weightLabel(x.peso)+' • '+money(x.precoKg)+'/kg'
-      : esc(x.tamanho||'');
-    return '<div class="item"><div class="row"><b>'+esc(x.qtd)+'x '+esc(x.nome)+'</b><b>'+money(Number(x.valor||0)*Number(x.qtd||1))+'</b></div><div class="sub">'+detalhe+'</div></div>';
+    if(typeof x==='string'||x.descricao)return '<div class="item">'+esc(typeof x==='string'?x:x.descricao)+'</div>';
+    const detalhe=x.tipo==='carne' ? weightLabel(x.peso)+' • '+money(x.precoKg)+'/kg' : esc(x.tamanho||'');
+    return '<div class="item"><div class="row"><b>'+esc(x.qtd||1)+'x '+esc(x.nome||'Item')+'</b><b>'+(x.valor!=null?money(Number(x.valor)*Number(x.qtd||1)):'')+'</b></div><div class="sub">'+detalhe+'</div></div>';
   }).join('');
   const destino=o.fulfillment==='Entrega'
     ? '<div class="dash"></div><b>REGIÃO / ENTREGA</b><div>'+esc(o.deliveryZone||'')+'</div><b>ENDEREÇO</b><div>'+esc(o.address||'')+'</div>'
