@@ -35,7 +35,8 @@ h1{font-size:18px;text-align:center;margin:3px 0}
 <div class="toolbar">
   <button onclick="setW('80mm')">80 mm</button>
   <button onclick="setW('58mm')">58 mm</button>
-  <button onclick="window.print()">🖨️ Imprimir 2 vias</button>
+  <button onclick="shareBluetooth()">📲 Enviar 2 vias ao Bluetooth</button>
+  <button onclick="window.print()">🖨️ Imprimir pelo Android</button>
 </div>
 <div class="wrap" id="app"></div>
 <script>
@@ -49,6 +50,20 @@ function decodePayload(v){
 }
 function weightLabel(g){return Number(g)===1000?'1 kg':g+' g'}
 function setW(w){document.documentElement.style.setProperty('--w',w)}
+let currentOrder=null;
+async function shareBluetooth(){
+ if(!currentOrder)return alert('Pedido não carregado.');
+ const o=currentOrder;
+ const lines=(o.items||[]).map(x=>String(x.qtd||1)+'x '+String(x.nome||'')+' '+(x.peso?x.peso+'g ':'')+' - '+money(Number(x.valor||0)*Number(x.qtd||1)));
+ const base=['BOI NO BAFO','PEDIDO '+(o.code||''),'Cliente: '+(o.customerName||''),'Telefone: '+(o.customerPhone||''),'Tipo: '+(o.fulfillment||''),'Horario: '+(o.requestedTime||''),o.fulfillment==='Entrega'?'Endereco: '+(o.address||''):null,'------------------------------',...lines,'------------------------------','Subtotal: '+money(o.subtotal),'Frete: '+money(o.deliveryFee),'TOTAL: '+money(o.total),'Pagamento: '+(o.payment||''),'Observacoes: '+(o.notes||'')].filter(x=>x!==null).join('\n');
+ const content='VIA 1 - COZINHA\n'+base+'\n\n\n------------------------------\nVIA 2 - CAIXA\n'+base+'\n\n';
+ const file=new File([content],'pedido-'+String(o.code||'boi-no-bafo').replace(/[^a-zA-Z0-9-]/g,'')+'.txt',{type:'text/plain'});
+ try{
+   if(navigator.canShare?.({files:[file]})){await navigator.share({files:[file],title:'Pedido Boi no Bafo'});return;}
+   if(navigator.share){await navigator.share({text:content,title:'Pedido Boi no Bafo'});return;}
+   const blob=new Blob([content],{type:'text/plain;charset=utf-8'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=file.name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),5000);alert('Arquivo salvo. Abra-o e compartilhe com seu aplicativo de impressao Bluetooth.');
+ }catch(e){if(e.name!=='AbortError')alert('Nao foi possivel compartilhar: '+e.message);}
+}
 function receipt(o,title){
   const when=new Date(o.createdAt).toLocaleString('pt-BR');
   const schedule=o.requestedTime==='ASAP'?'O mais rápido possível':(o.requestedTime||'');
@@ -75,7 +90,7 @@ function receipt(o,title){
 try{
   const q=new URLSearchParams(location.search).get('o');
   if(!q) throw new Error('Pedido não informado');
-  const o=decodePayload(q);
+  const o=decodePayload(q);currentOrder=o;
   document.getElementById('app').innerHTML=receipt(o,'VIA 1 — PREPARO / COZINHA')+'<div class="cut">✂────────── CORTE AQUI ──────────✂</div>'+receipt(o,'VIA 2 — CAIXA / ATENDIMENTO');
 }catch(e){
   document.getElementById('app').innerHTML='<div class="err"><h2>Não foi possível abrir o pedido.</h2><p>'+esc(e.message)+'</p></div>';
