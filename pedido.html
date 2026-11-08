@@ -20,7 +20,7 @@ h1{font-size:21px;text-align:center;margin:3px 0}
 .item{margin:9px 0;font-size:15px;font-weight:900;overflow-wrap:anywhere;line-height:1.25}
 .sub{font-size:14px;font-weight:900}
 .total{font-size:20px;font-weight:900;margin-top:4px}.customer{font-size:17px;font-weight:900;overflow-wrap:anywhere;margin:6px 0}.address{font-size:15px;font-weight:900;overflow-wrap:anywhere}.item .weight{font-weight:900;text-decoration:underline}.sheet .row{overflow-wrap:anywhere}.items-title{font-size:15px;font-weight:900}.item b{font-weight:900}
-.cut{text-align:center;margin:10px auto;font-size:12px}
+.highlight-box{border:1.5px solid #000;padding:5px 4px;margin:7px 0;break-inside:avoid;overflow-wrap:anywhere}.order-code{font-size:17px;font-weight:900;text-align:center}.highlight-box .customer{margin:0}.highlight-box .item{margin:6px 0}.total-box{border:2px solid #000;padding:5px 3px;margin-top:8px}.cut{text-align:center;margin:10px auto;font-size:12px}
 .err{background:#fff;padding:20px;margin:30px auto;max-width:650px}
 @page{size:58mm auto;margin:0}
 @media print{
@@ -87,7 +87,7 @@ function receipt(o,title){
   const pixOk=o.payment==='Pix'&&o.proofReceived
     ? '<div><b>PIX — COMPROVANTE RECEBIDO</b></div>'
     : '';
-  return '<div class="sheet"><div class="copy">'+esc(title)+'</div><h1>Boi no Bafo</h1><div class="center">PEDIDO '+esc(o.code)+'<br>'+esc(when)+'</div><div class="dash"></div><div><b>TIPO:</b> '+esc((o.fulfillment||'').toUpperCase())+'</div><div><b>HORÁRIO:</b> '+esc(schedule)+'</div><div class="dash"></div><b>ITENS</b>'+items+'<div class="dash"></div><div class="row"><span>Subtotal</span><span>'+money(o.subtotal)+'</span></div><div class="row"><span>Taxa entrega</span><span>'+(Number(o.deliveryFee||0)===0?'GRÁTIS':money(o.deliveryFee))+'</span></div><div class="row total"><span>TOTAL</span><span>'+money(o.total)+'</span></div>'+destino+'<div class="dash"></div><b>PAGAMENTO</b><div>'+esc(o.payment||'')+'</div>'+pixOk+troco+maquina+'<div class="dash"></div><div class="center">pedido gerado pelo atendimento automático</div></div>';
+  return '<div class="sheet"><div class="copy">'+esc(title)+'</div><h1>Boi no Bafo</h1><div class="highlight-box"><div class="order-code">PEDIDO '+esc(o.code)+'</div><div class="center">'+esc(when)+'</div></div><div class="highlight-box"><div class="customer">CLIENTE: '+esc(o.customerName||'')+'</div></div><div><b>TIPO:</b> '+esc((o.fulfillment||'').toUpperCase())+'</div><div><b>HORÁRIO:</b> '+esc(schedule)+'</div><div class="highlight-box"><div class="items-title">CARNES E GUARNIÇÕES</div>'+items+'</div><div class="dash"></div><div class="row"><span>Subtotal</span><span>'+money(o.subtotal)+'</span></div><div class="row"><span>Taxa entrega</span><span>'+(Number(o.deliveryFee||0)===0?'GRÁTIS':money(o.deliveryFee))+'</span></div><div class="total-box"><div class="row total"><span>TOTAL</span><span>'+money(o.total)+'</span></div></div>'+destino+'<div class="dash"></div><b>PAGAMENTO</b><div>'+esc(o.payment||'')+'</div>'+pixOk+troco+maquina+'<div class="dash"></div><div class="center">pedido gerado pelo atendimento automático</div></div>';
 }
 try{
   const q=new URLSearchParams(location.search).get('o');
