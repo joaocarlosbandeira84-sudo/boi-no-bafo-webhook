@@ -22,11 +22,14 @@ h1{font-size:21px;text-align:center;margin:3px 0}
 .total{font-size:19px;font-weight:800;margin-top:4px}.customer{font-size:16px;font-weight:900;overflow-wrap:anywhere;margin:6px 0}.address{font-size:15px;font-weight:900;overflow-wrap:anywhere}.item .weight{font-weight:900;text-decoration:underline}.sheet .row{overflow-wrap:anywhere}
 .cut{text-align:center;margin:10px auto;font-size:12px}
 .err{background:#fff;padding:20px;margin:30px auto;max-width:650px}
+@page{size:58mm auto;margin:0}
 @media print{
+  html,body{width:58mm!important;max-width:58mm!important;margin:0!important;padding:0!important;overflow:hidden!important}
   body{background:#fff}
   .toolbar{display:none}
   .wrap{margin:0;padding:0}
-  .sheet{box-shadow:none;page-break-after:always;margin:0 auto}
+  .sheet{width:58mm!important;max-width:58mm!important;box-shadow:none;break-after:page;page-break-after:always;margin:0!important;padding:2mm 5mm 2mm 2mm!important;overflow:hidden!important}
+  .sheet:last-child{break-after:auto;page-break-after:auto}
   .cut{display:none}
 }
 </style>
