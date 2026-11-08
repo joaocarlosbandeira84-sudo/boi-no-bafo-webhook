@@ -11,15 +11,15 @@ body{margin:0;background:#eee;font-family:Arial,Helvetica,sans-serif;color:#000}
 .toolbar{position:sticky;top:0;background:#fff;padding:10px;display:flex;gap:8px;flex-wrap:wrap;border-bottom:1px solid #ccc;z-index:2}
 button{padding:9px 12px;border:1px solid #999;background:#fff;border-radius:8px;font-weight:700}
 .wrap{max-width:900px;margin:16px auto;padding:0 12px}
-.sheet{width:var(--w);max-width:100%;margin:0 auto 14px;background:#fff;padding:3mm;box-shadow:0 1px 8px #bbb}
+.sheet{width:var(--w);max-width:100%;margin:0 auto 14px;background:#fff;padding:3mm 5mm 3mm 2mm;overflow:hidden;overflow-wrap:anywhere;box-shadow:0 1px 8px #bbb}
 h1{font-size:21px;text-align:center;margin:3px 0}
 .center{text-align:center;font-size:13px}
 .copy{text-align:center;font-weight:800;font-size:15px;margin-bottom:6px}
 .dash{border-top:1px dashed #000;margin:7px 0}
 .row{display:flex;justify-content:space-between;gap:5px;font-size:13px;flex-wrap:wrap}
-.item{margin:9px 0;font-size:16px;font-weight:800;overflow-wrap:anywhere}
+.item{margin:9px 0;font-size:15px;font-weight:800;overflow-wrap:anywhere;line-height:1.25}
 .sub{font-size:13px;font-weight:800}
-.total{font-size:20px;font-weight:800;margin-top:4px}
+.total{font-size:19px;font-weight:800;margin-top:4px}.customer{font-size:16px;font-weight:900;overflow-wrap:anywhere;margin:6px 0}.address{font-size:15px;font-weight:900;overflow-wrap:anywhere}.item .weight{font-weight:900;text-decoration:underline}.sheet .row{overflow-wrap:anywhere}
 .cut{text-align:center;margin:10px auto;font-size:12px}
 .err{background:#fff;padding:20px;margin:30px auto;max-width:650px}
 @media print{
@@ -68,7 +68,7 @@ function receipt(o,title){
   const when=new Date(o.createdAt).toLocaleString('pt-BR');
   const schedule=o.requestedTime==='ASAP'?'O mais rápido possível':(o.requestedTime||'');
   const items=(o.items||[]).map(x=>{
-    if(typeof x==='string'||x.descricao)return '<div class="item">'+esc(typeof x==='string'?x:x.descricao)+'</div>';
+    if(typeof x==='string'||x.descricao){const raw=String(typeof x==='string'?x:x.descricao);const match=raw.match(/^(.*?)(\(\s*\d+\s*g\s*\))(.*)$/i);return '<div class="item">'+(match?esc(match[1])+'<span class="weight">'+esc(match[2])+'</span>'+esc(match[3]):esc(raw))+'</div>';}
     const detalhe=x.tipo==='carne' ? weightLabel(x.peso)+' • '+money(x.precoKg)+'/kg' : esc(x.tamanho||'');
     return '<div class="item"><div class="row"><b>'+esc(x.qtd||1)+'x '+esc(x.nome||'Item')+'</b><b>'+(x.valor!=null?money(Number(x.valor)*Number(x.qtd||1)):'')+'</b></div><div class="sub">'+detalhe+'</div></div>';
   }).join('');
