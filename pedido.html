@@ -94,6 +94,7 @@ try{
   if(!q) throw new Error('Pedido não informado');
   const o=decodePayload(q);currentOrder=o;
   document.getElementById('app').innerHTML=receipt(o,'VIA 1 — PREPARO / COZINHA')+'<div class="cut">✂────────── CORTE AQUI ──────────✂</div>'+receipt(o,'VIA 2 — CAIXA / ATENDIMENTO');
+  if(new URLSearchParams(location.search).get('auto')==='1')window.addEventListener('load',()=>setTimeout(()=>window.print(),400),{once:true});
 }catch(e){
   document.getElementById('app').innerHTML='<div class="err"><h2>Não foi possível abrir o pedido.</h2><p>'+esc(e.message)+'</p></div>';
 }
